@@ -6,14 +6,30 @@ namespace opencv_pfm
 	{
 		std::ifstream pfm_file(pfm_path.c_str());
 		if (!pfm_file.is_open())
-		{
 			return cv::Mat();
-		}
-
+	
 		header pfm_header = read_pfm_header(pfm_file);
 		cv::Mat pfm_image = read_pfm_data(pfm_file, pfm_header, endianness);
 		
-		return pfm_image;	
+		pfm_file.close();
+		return pfm_image;
+	}
+
+	void imwrite_pfm(std::string pfm_path, cv::Mat &image, int pfm_endianness, int save_endianness)
+	{
+		check_mat_type(image);
+		std::ofstream pfm_file(pfm_path.c_str());
+		if (!pfm_file.is_open())
+		{
+			throw;
+			return;
+		}
+
+		write_pfm_header(pfm_file, image, save_endianness);
+		write_pfm_data(pfm_file, image, pfm_endianness, save_endianness);
+
+		pfm_file.close();
+		return;
 	}
 
 	header read_pfm_header(std::ifstream &pfm_file)
@@ -55,10 +71,49 @@ namespace opencv_pfm
 		for (int bytes = 0; bytes < bytes_per_float; bytes++)		// assemble whole number
 		{
 			pfm_file.read(&raw_byte, 1);
-			raw_data[adjust_endianness(bytes, endianness_matching)] = raw_byte;		// inser int order respecting endianness
+			raw_data[adjust_endianness(bytes, endianness_matching)] = raw_byte;		// inser in order respecting endianness
 		}
 		memcpy(&float_data, raw_data, bytes_per_float);		// copy to float type
 		return float_data;
+	}
+
+	void write_pfm_header(std::ofstream &pfm_file, cv::Mat &image, int save_endianness)
+	{
+		float endianness = (save_endianness == opencv_pfm::little_endian) ? (double)-1.0 : (double)1.0;
+		pfm_file << "Pf\n"
+				 << image.cols
+				 << " "
+				 << image.rows
+				 << "\n"
+				 << endianness
+				 << "\n";
+	}
+
+	void write_pfm_data(std::ofstream &pfm_file, cv::Mat &image, int pfm_endianness, int save_endianness)
+	{		
+		bool endianness_matching = !check_endianness_match(pfm_endianness, save_endianness);
+
+		for (int i = 0; i < image.rows; i++)	// load values
+		{
+			for (int j = 0; j < image.cols; j++)
+			{
+				write_pixel(pfm_file, endianness_matching, image.at<float>(i, j));
+			}
+		}
+		pfm_file << "\n";
+		return;
+	}
+
+	void write_pixel(std::ofstream &pfm_file, bool endianness_matching, float float_data)
+	{
+		char raw_data[bytes_per_float];
+		memcpy(raw_data, &float_data, bytes_per_float);
+
+		for (int bytes = 0; bytes < bytes_per_float; bytes++)		// disassemble whole number
+		{
+			pfm_file << raw_data[adjust_endianness(bytes, endianness_matching)];		// write in order respecting endianness
+		}
+		return;
 	}
 
 	int adjust_endianness(int byte_position, bool endianness_matching)
@@ -85,5 +140,12 @@ namespace opencv_pfm
 		if (!pfm_file.eof() && data != 0x0a)
 			return false;
 		return true;
+	}
+
+	void check_mat_type(cv::Mat &image)
+	{
+		if (image.type() != CV_32FC1 || image.data == NULL)
+			throw;
+		return;
 	}
 }
